@@ -104,11 +104,6 @@ class ClientsService {
       throw new NotFoundError('Client not found');
     }
 
-    // Check if user has permission to update
-    if (client.userId !== userId && req?.user?.role !== 'ADMIN') {
-      throw new ForbiddenError('You do not have permission to update this client');
-    }
-
     // Check if email is being changed and if it's unique
     if (data.email && data.email !== client.email) {
       const existingClient = await prisma.client.findFirst({
@@ -132,7 +127,7 @@ class ClientsService {
   /**
    * Delete client
    */
-  async deleteClient(clientId: string, userId: string): Promise<void> {
+  async deleteClient(clientId: string): Promise<void> {
     // Check if client exists
     const client = await prisma.client.findUnique({
       where: { id: clientId },
@@ -140,11 +135,6 @@ class ClientsService {
 
     if (!client) {
       throw new NotFoundError('Client not found');
-    }
-
-    // Check if user has permission to delete
-    if (client.userId !== userId) {
-      throw new ForbiddenError('You do not have permission to delete this client');
     }
 
     // Delete client
