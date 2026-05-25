@@ -1,0 +1,405 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================
+// Users & Authentication
+// ===========================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?
+  role      Role     @default(STAFF)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  clients   Client[]
+  projects  Project[]
+  invoices  Invoice[]
+  expenses  Expense[]
+  surveys   LandSurvey[]
+
+  @@index([email])
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+// ===========================
+// Clients
+// ===========================
+
+model Client {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  email         String
+  phone         String
+  address       String?
+  city          String?
+  county        String?
+  kraPin        String?
+  idNumber      String?
+  idCopyUrl     String?   // URL to uploaded ID copy
+  kraPin2Url    String?   // URL to KRA PIN copy
+  titleDeedsUrl String?   // URL to title deed document
+  active        Boolean   @default(true)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects Project[]
+  documents ClientDocument[]
+
+  @@index([userId])
+  @@index([email])
+  @@map("clients")
+}
+
+model ClientDocument {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  type      DocumentType
+  fileUrl   String
+  fileSize  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("client_documents")
+}
+
+enum DocumentType {
+  ID_COPY
+  KRA_PIN
+  TITLE_DEED
+  LEASE_AGREEMENT
+  OTHER
+}
+
+// ===========================
+// Projects & Land Management
+// ===========================
+
+model Project {
+  id            String   @id @default(cuid())
+  clientId      String
+  userId        String
+  name          String
+  description   String?
+  location      String
+  latitude      Float?    // Google Maps latitude
+  longitude     Float?    // Google Maps longitude
+  parcelSize    Float?    // Size in square meters
+  parcelRef     String?   // Land parcel reference number
+  status        ProjectStatus @default(PENDING)
+  startDate     DateTime?
+  expectedEnd   DateTime?
+  actualEnd     DateTime?
+  budget        Decimal?  @db.Decimal(15, 2)
+  spent         Decimal?  @default(0) @db.Decimal(15, 2)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  invoices   Invoice[]
+  expenses   Expense[]
+  surveys    LandSurvey[]
+  tasks      ProjectTask[]
+  documents  ProjectDocument[]
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  PENDING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model ProjectTask {
+  id          String   @id @default(cuid())
+  projectId   String
+  title       String
+  description String?
+  status      TaskStatus @default(PENDING)
+  priority    Priority   @default(MEDIUM)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_tasks")
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model ProjectDocument {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  type      DocumentType
+  fileUrl   String
+  fileSize  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_documents")
+}
+
+// ===========================
+// Land Survey
+// ===========================
+
+model LandSurvey {
+  id             String   @id @default(cuid())
+  projectId      String
+  userId         String
+  surveyDate     DateTime
+  boundaries     String?  // GeoJSON format
+  area           Float?   // Square meters
+  coordinates    String?  // JSON array of coordinate points
+  mapImageUrl    String?  // Survey map image
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("land_surveys")
+}
+
+// ===========================
+// Financial Management
+// ===========================
+
+model Invoice {
+  id              String   @id @default(cuid())
+  projectId       String
+  userId          String
+  invoiceNumber   String   @unique
+  description     String?
+  amount          Decimal  @db.Decimal(15, 2)
+  taxAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  status          InvoiceStatus @default(DRAFT)
+  issuedDate      DateTime @default(now())
+  dueDate         DateTime
+  paidDate        DateTime?
+  currency        String   @default("KES")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  receipts Receipt[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Receipt {
+  id               String   @id @default(cuid())
+  invoiceId        String
+  receiptNumber    String   @unique
+  amount           Decimal  @db.Decimal(15, 2)
+  paymentMethod    PaymentMethod
+  paymentDate      DateTime @default(now())
+  transactionRef   String?  // M-Pesa or bank transaction reference
+  mpesaRequestId   String?  // M-Pesa STK request ID
+  mpesaCheckoutId  String?  // M-Pesa checkout ID
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([paymentDate])
+  @@map("receipts")
+}
+
+enum PaymentMethod {
+  MPESA
+  BANK_TRANSFER
+  CASH
+  CHEQUE
+  OTHER
+}
+
+model Quotation {
+  id              String   @id @default(cuid())
+  projectId       String?  // Optional, can be general quotation
+  quotationNumber String   @unique
+  description     String?
+  amount          Decimal  @db.Decimal(15, 2)
+  taxAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  status          QuotationStatus @default(DRAFT)
+  validUntil      DateTime
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  projectId     String?
+  userId        String
+  description   String
+  amount        Decimal  @db.Decimal(15, 2)
+  category      ExpenseCategory
+  receiptUrl    String?  // URL to receipt document
+  expenseDate   DateTime @default(now())
+  approvedBy    String?
+  approved      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([category])
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  MATERIALS
+  LABOR
+  TRANSPORT
+  UTILITIES
+  OFFICE
+  EQUIPMENT
+  OTHER
+}
+
+// ===========================
+// Notifications
+// ===========================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  read      Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  PROJECT_UPDATE
+  INVOICE_DUE
+  PAYMENT_RECEIVED
+  DOCUMENT_UPLOADED
+  ALERT
+  INFO
+}
+
+// ===========================
+// Audit & Logs
+// ===========================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  changes   String?  // JSON diff
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
